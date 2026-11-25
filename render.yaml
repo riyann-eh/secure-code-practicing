@@ -1,0 +1,80 @@
+# SecureReflex AI - Render Blueprint (Infrastructure as Code)
+# Deploys the backend (FastAPI) and the website (Next.js) as two free Docker web
+# services. The extension is NOT deployed; it is built separately into a .vsix and
+# points at the backend's public URL.
+#
+# How to use:
+#   1. Push this file to the connected GitHub repo (branch: main).
+#   2. In the Render dashboard: New + -> Blueprint -> pick this repo -> Apply.
+#   3. After both services go live, copy the backend's public URL
+#      (https://<assigned-name>.onrender.com) and set it as the extension setting
+#      `securereflex.backendUrl`.
+#
+# Notes:
+#   - Free web services sleep after ~15 min idle; the first request wakes them
+#     (cold start up to ~1 min). This is fine for a demo.
+#   - Free services have no persistent disk, so the SQLite database resets on each
+#     redeploy/restart. Evaluations created during a session work normally; only the
+#     long-term History survives a redeploy if you attach a disk (paid) or Postgres.
+#   - DEMO_MODE is true so the public API runs the deterministic demo provider and
+#     needs no API keys. To use real AI, set DEMO_MODE=false and add the relevant
+#     *_API_KEY as a (secret) environment variable in the Render dashboard.
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend API - FastAPI + uvicorn. This is the URL the extension talks to.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: securereflex-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      # Render routes traffic to the port named here; the container listens on 8000.
+      - key: PORT
+        value: "8000"
+      # Deterministic demo provider: no keys required, no external cost.
+      - key: DEMO_MODE
+        value: "true"
+      - key: DEFAULT_AI_PROVIDER
+        value: demo
+      # Ephemeral SQLite inside the container (see note above about persistence).
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////app/data/securereflex.db
+      - key: LOG_LEVEL
+        value: INFO
+      # Real-provider keys (leave unset while DEMO_MODE=true). Add in the dashboard
+      # as secrets if you later set DEMO_MODE=false.
+      # - key: OPENAI_API_KEY
+      #   sync: false
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false
+      # - key: GOOGLE_API_KEY
+      #   sync: false
+
+  # ---------------------------------------------------------------------------
+  # Website - Next.js. Proxies /api/* to the backend over the private network.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: securereflex-frontend
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # Baked in as a Docker build arg (Render translates env vars to build args)
+      # AND available at runtime. Uses the backend service name as its private host.
+      - key: BACKEND_URL
+        value: http://securereflex-backend:8000
