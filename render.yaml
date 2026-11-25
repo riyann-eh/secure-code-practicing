@@ -75,6 +75,7 @@ services:
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
       # Baked in as a Docker build arg (Render translates env vars to build args)
-      # AND available at runtime. Uses the backend service name as its private host.
+      # AND available at runtime. Must be the backend's PUBLIC URL: free Render
+      # services can't receive private-network traffic.
       - key: BACKEND_URL
-        value: http://securereflex-backend:8000
+        value: https://securereflex-backend.onrender.com
